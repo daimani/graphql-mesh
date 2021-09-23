@@ -23,7 +23,6 @@ import {
 } from 'graphql';
 import {
   GraphQLBigInt,
-  GraphQLDate,
   GraphQLDateTime,
   GraphQLEmailAddress,
   GraphQLIPv4,
@@ -46,6 +45,7 @@ interface TypeComposers {
 }
 
 const JSONSchemaStringFormats = [
+  'date',
   'hostname',
   'regex',
   'json-pointer',
@@ -288,11 +288,11 @@ export function getComposerFromJSONSchema(schema: JSONSchema, logger: Logger): P
         };
       }
 
-      if (subSchema.oneOf) {
+      if (subSchema.oneOf && !subSchema.properties) {
         return getUnionTypeComposers(subSchema.oneOf);
       }
 
-      if (subSchema.allOf) {
+      if (subSchema.allOf && !subSchema.properties) {
         // It should not have `required` because it is `anyOf` not `allOf`
         const inputFieldMap: InputTypeComposerFieldConfigMap = {};
         const fieldMap: ObjectTypeComposerFieldConfigMap<any, any> = {};
@@ -349,7 +349,7 @@ export function getComposerFromJSONSchema(schema: JSONSchema, logger: Logger): P
         };
       }
 
-      if (subSchema.anyOf) {
+      if (subSchema.anyOf && !subSchema.properties) {
         // It should not have `required` because it is `anyOf` not `allOf`
         const inputFieldMap: InputTypeComposerFieldConfigMap = {};
         const fieldMap: ObjectTypeComposerFieldConfigMap<any, any> = {};
@@ -472,10 +472,10 @@ export function getComposerFromJSONSchema(schema: JSONSchema, logger: Logger): P
               if (v != null) {
                 const vStr = v.toString();
                 if (typeof subSchema.minLength !== 'undefined' && vStr.length < subSchema.minLength) {
-                  throw new Error(`${typeComposerName} cannot be less than ${subSchema.minLength}`);
+                  throw new Error(`${typeComposerName} cannot be less than ${subSchema.minLength} but given ${vStr}`);
                 }
                 if (typeof subSchema.maxLength !== 'undefined' && vStr.length > subSchema.maxLength) {
-                  throw new Error(`${typeComposerName} cannot be more than ${subSchema.maxLength}`);
+                  throw new Error(`${typeComposerName} cannot be more than ${subSchema.maxLength} but given ${vStr}`);
                 }
                 return vStr;
               }
@@ -484,8 +484,13 @@ export function getComposerFromJSONSchema(schema: JSONSchema, logger: Logger): P
               name: typeComposerName,
               description: subSchema.description,
               serialize: coerceString,
-              parseLiteral: coerceString,
-              parseValue: ast => ast?.value && coerceString(ast.value),
+              parseValue: coerceString,
+              parseLiteral: ast => {
+                if ('value' in ast) {
+                  return coerceString(ast.value);
+                }
+                return null;
+              },
             });
             return {
               input: typeComposer,
@@ -502,13 +507,6 @@ export function getComposerFromJSONSchema(schema: JSONSchema, logger: Logger): P
             }
             case 'time': {
               const typeComposer = schemaComposer.getAnyTC(GraphQLTime);
-              return {
-                input: typeComposer,
-                output: typeComposer,
-              };
-            }
-            case 'date': {
-              const typeComposer = schemaComposer.getAnyTC(GraphQLDate);
               return {
                 input: typeComposer,
                 output: typeComposer,
@@ -542,6 +540,7 @@ export function getComposerFromJSONSchema(schema: JSONSchema, logger: Logger): P
                 output: typeComposer,
               };
             }
+            case 'date':
             case 'idn-email':
             case 'hostname':
             case 'regex':
@@ -614,6 +613,10 @@ export function getComposerFromJSONSchema(schema: JSONSchema, logger: Logger): P
           if (subSchema.properties) {
             subSchema.type = 'object';
             for (const propertyName in subSchema.properties) {
+              // TODO: needs to be fixed
+              if (propertyName === 'additionalProperties') {
+                continue;
+              }
               const typeComposers = subSchema.properties[propertyName];
               fieldMap[propertyName] = {
                 type: () =>
