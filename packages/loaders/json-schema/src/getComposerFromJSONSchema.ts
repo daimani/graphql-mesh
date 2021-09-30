@@ -293,7 +293,6 @@ export function getComposerFromJSONSchema(schema: JSONSchema, logger: Logger): P
       }
 
       if (subSchema.allOf && !subSchema.properties) {
-        // It should not have `required` because it is `anyOf` not `allOf`
         const inputFieldMap: InputTypeComposerFieldConfigMap = {};
         const fieldMap: ObjectTypeComposerFieldConfigMap<any, any> = {};
         let ableToUseGraphQLInputObjectType = true;
